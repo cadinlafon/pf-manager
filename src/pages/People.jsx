@@ -5,9 +5,10 @@ import { useAuth } from "../context/AuthContext";
 import { firestoreMessage, useQuery } from "../hooks/useQuery";
 import { PEOPLE_STATUSES, createPerson, deletePerson, listPeople, updatePerson } from "../firebase/people";
 import Modal from "../components/ui/Modal";
+import PeopleTabs from "../components/people/PeopleTabs";
 import { Badge, Button, EmptyState, ErrorState, Field, LoadingState, Notice, PageHeader, SearchInput, TextField } from "../components/ui";
 
-const STATUS_TONE = { Member: "success", "Regular Attender": "info", Visitor: "warn", Inactive: "" };
+export const STATUS_TONE = { Member: "success", "Regular Attender": "info", Visitor: "warn", Inactive: "" };
 const EMPTY_PERSON = { name: "", email: "", status: PEOPLE_STATUSES[0], address: "" };
 
 const SORTS = {
@@ -15,12 +16,12 @@ const SORTS = {
   newest: { label: "Recently added", compare: (a, b) => (b.createdAt || 0) - (a.createdAt || 0) },
 };
 
-const initials = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join("") || "?";
+export const initials = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0].toUpperCase()).join("") || "?";
 
 // Add and edit share one dialog; `person` is null when adding.
-function PersonModal({ person, onClose, onSaved }) {
+function PersonModal({ person, defaultStatus, onClose, onSaved }) {
   const { user } = useAuth();
-  const [form, setForm] = useState(person ? { name: person.name, email: person.email || "", status: person.status, address: person.address || "" } : EMPTY_PERSON);
+  const [form, setForm] = useState(person ? { name: person.name, email: person.email || "", status: person.status, address: person.address || "" } : { ...EMPTY_PERSON, status: defaultStatus || EMPTY_PERSON.status });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const set = (key) => (e) => setForm((current) => ({ ...current, [key]: e.target.value }));
@@ -78,7 +79,9 @@ function PersonModal({ person, onClose, onSaved }) {
   );
 }
 
-export default function People() {
+// `membersOnly` turns this into the Members page: the same directory, limited
+// to people whose status is "Member".
+export default function People({ membersOnly = false }) {
   const query = useQuery(listPeople);
   const location = useLocation();
   const [search, setSearch] = useState("");
@@ -87,7 +90,8 @@ export default function People() {
   // `editing`: undefined = closed, null = adding, object = editing that person.
   const [editing, setEditing] = useState(location.state?.openAdd ? null : undefined);
 
-  const people = query.data || [];
+  const everyone = query.data || [];
+  const people = useMemo(() => (membersOnly ? everyone.filter((person) => person.status === "Member") : everyone), [everyone, membersOnly]);
   const counts = useMemo(() => {
     const tally = { All: people.length };
     for (const person of people) tally[person.status] = (tally[person.status] || 0) + 1;
@@ -102,7 +106,7 @@ export default function People() {
       .sort(SORTS[sort].compare);
   }, [people, search, status, sort]);
 
-  const addButton = <Button variant="primary" icon={Plus} onClick={() => setEditing(null)}>Add Person</Button>;
+  const addButton = <Button variant="primary" icon={Plus} onClick={() => setEditing(null)}>{membersOnly ? "Add Member" : "Add Person"}</Button>;
 
   let body;
   if (query.loading) {
@@ -110,7 +114,9 @@ export default function People() {
   } else if (query.error) {
     body = <ErrorState message={query.error} onRetry={query.reload} />;
   } else if (people.length === 0) {
-    body = <EmptyState icon={Users} title="No people yet" message="Add the first person to start the directory." action={addButton} />;
+    body = membersOnly
+      ? <EmptyState icon={Users} title="No members yet" message={'People whose status is "Member" show up here. Add one, or change someone\'s status under All People.'} action={addButton} />
+      : <EmptyState icon={Users} title="No people yet" message="Add the first person to start the directory." action={addButton} />;
   } else if (visible.length === 0) {
     body = (
       <EmptyState icon={Users} title="No matches" message="No one matches the current search and filters."
@@ -139,7 +145,12 @@ export default function People() {
 
   return (
     <>
-      <PageHeader title="People" subtitle="Everyone connected to the church." action={addButton} />
+      <PageHeader
+        title={membersOnly ? "Members" : "All People"}
+        subtitle={membersOnly ? "Everyone whose status is Member." : "Everyone connected to the church."}
+        action={addButton}
+      />
+      <PeopleTabs />
 
       <div className="toolbar">
         <SearchInput value={search} onChange={setSearch} placeholder="Search people..." />
@@ -149,17 +160,19 @@ export default function People() {
         {!query.loading && !query.error && <span className="toolbar-count">{visible.length} of {people.length}</span>}
       </div>
 
-      <div className="chips" role="group" aria-label="Filter by member status">
-        {["All", ...PEOPLE_STATUSES].map((option) => (
-          <button key={option} type="button" className="chip" aria-pressed={status === option} onClick={() => setStatus(option)}>
-            {option} <span>{counts[option] || 0}</span>
-          </button>
-        ))}
-      </div>
+      {!membersOnly && (
+        <div className="chips" role="group" aria-label="Filter by member status">
+          {["All", ...PEOPLE_STATUSES].map((option) => (
+            <button key={option} type="button" className="chip" aria-pressed={status === option} onClick={() => setStatus(option)}>
+              {option} <span>{counts[option] || 0}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <section className="card">{body}</section>
 
-      {editing !== undefined && <PersonModal person={editing} onClose={() => setEditing(undefined)} onSaved={query.reload} />}
+      {editing !== undefined && <PersonModal person={editing} defaultStatus={membersOnly ? "Member" : undefined} onClose={() => setEditing(undefined)} onSaved={query.reload} />}
     </>
   );
 }

@@ -1,9 +1,10 @@
 import { Fragment } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import Brand from "./Brand";
 import { NAV_ITEMS, NAV_SECTIONS } from "./navItems";
 
 function SidebarLink({ item }) {
+  const { pathname } = useLocation();
   const Icon = item.icon;
   if (item.unavailable) {
     return (
@@ -14,11 +15,24 @@ function SidebarLink({ item }) {
       </span>
     );
   }
+  // A section with sub-pages opens its list while you're anywhere inside it.
+  const open = Boolean(item.children) && pathname.startsWith(item.path);
   return (
-    <NavLink to={item.path} className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`}>
-      <Icon size={18} aria-hidden />
-      {item.label}
-    </NavLink>
+    <>
+      <NavLink to={item.path} className={({ isActive }) => `sidebar-link${isActive ? " active" : ""}`} aria-expanded={item.children ? open : undefined}>
+        <Icon size={18} aria-hidden />
+        {item.label}
+      </NavLink>
+      {open && (
+        <div className="sidebar-sub">
+          {item.children.map((child) => (
+            <NavLink key={child.path} to={child.path} end={child.end} className={({ isActive }) => `sidebar-sublink${isActive ? " active" : ""}`}>
+              {child.label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 

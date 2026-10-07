@@ -7,6 +7,8 @@ import Dashboard from "./pages/Dashboard";
 import Calendar from "./pages/Calendar";
 import Finance from "./pages/Finance";
 import People from "./pages/People";
+import Groups from "./pages/Groups";
+import GroupDetails from "./pages/GroupDetails";
 import Inventory from "./pages/Inventory";
 import EmailList from "./pages/EmailList";
 import Settings from "./pages/Settings";
@@ -41,6 +43,9 @@ export default function App() {
           <Route path="/calendar" element={<Calendar />} />
           <Route path="/finance" element={FINANCE_ENABLED ? <Finance /> : <FeatureUnavailable title="Finance" />} />
           <Route path="/people" element={<People />} />
+          <Route path="/people/members" element={<People membersOnly />} />
+          <Route path="/people/groups" element={<Groups />} />
+          <Route path="/people/groups/:id" element={<GroupDetails />} />
           <Route path="/members" element={<Navigate to="/people" replace />} />
           <Route path="/inventory" element={<Inventory />} />
           <Route path="/saved" element={<Saved />} />

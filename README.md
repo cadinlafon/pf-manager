@@ -39,7 +39,7 @@ Copy `.env.example` to `.env`. Restart the dev server or rebuild after changing 
 | Dashboard | Counts, upcoming calendar events, volunteer signups that need people, latest announcements | — |
 | Calendar | The church's public Google Calendar, embedded | `leaderConfig/googleCalendar` |
 | Finance | A hand-kept ledger of income and expenses, with a quick form for recording tithes | `leaderTransactions` |
-| People | Directory: name, email, member status, address | `leaderPeople` |
+| People | Directory (name, email, member status, address) with three views: All People, Members (status is Member), and Groups you put people into | `leaderPeople`, `leaderGroups` |
 | Inventory | Equipment and supplies | `leaderInventory` |
 | Saved | Resource library: links, notes, and uploaded documents, images and files, each Personal, Managers or Main Admins only; personal favorites, pinning, recently opened | `leaderSaved`, `leaderSavedUsers/{uid}`; files in Storage at `leaderSaved/{id}/` |
 | Signup Forms | Build a form, share `/form/{ending}`, collect submissions | `leaderForms/{slug}` + `submissions` |

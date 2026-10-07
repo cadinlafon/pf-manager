@@ -141,6 +141,9 @@ await t("public cannot submit to a closed form", assertFails(addDoc(collection(p
 await t("public cannot read submissions", assertFails(getDocs(collection(pub(), "leaderForms/openform/submissions"))));
 await t("public cannot read people", assertFails(getDocs(collection(pub(), "leaderPeople"))));
 await t("leader can read submissions", assertSucceeds(getDocs(collection(admin(), "leaderForms/openform/submissions"))));
+await t("leader can create a group", assertSucceeds(addDoc(collection(admin(), "leaderGroups"), { name: "1st Service", memberIds: ["p1"] })));
+await t("public cannot read groups", assertFails(getDocs(collection(pub(), "leaderGroups"))));
+await t("audio-app listener cannot read groups", assertFails(getDocs(collection(listener(), "leaderGroups"))));
 await t("leader can add a person", assertSucceeds(addDoc(collection(admin(), "leaderPeople"), { name: "Y" })));
 
 console.log("ANNOUNCEMENTS"); await seed();

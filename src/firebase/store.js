@@ -52,3 +52,5 @@ export function makeStore(name) {
 export const inventoryStore = makeStore("inventory");
 export const transactionStore = makeStore("transactions");
 export const emailListStore = makeStore("emailList");
+// Groups of people: { name, description, memberIds: [id from leaderPeople] }.
+export const groupStore = makeStore("groups");

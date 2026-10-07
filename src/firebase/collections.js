@@ -16,6 +16,7 @@ import { db } from "./config";
 //     /submissions/{id}    { title, description, fields[], status } / { answers, submittedAt }
 //   volunteerSignups/{id}  LIVE. Volunteer signup sheets + /volunteers subcollection.
 //                          See src/firebase/volunteers.js.
+//   leaderGroups/{id}      LIVE. Groups of people. { name, description, memberIds: [personId] }
 //   leaderPeople/{id}      LIVE. People directory. { name, email, status, address }
 //   leaderInventory/{id}   LIVE. { name, quantity, category, location, notes }
 //   leaderTransactions/{id} LIVE. Finance ledger. { date, type, category, description, amount, method, personName, notes }
@@ -35,6 +36,7 @@ export const COLLECTIONS = {
   forms: "leaderForms",
   volunteerSignups: "volunteerSignups",
   people: "leaderPeople",
+  groups: "leaderGroups",
   inventory: "leaderInventory",
   transactions: "leaderTransactions",
   emailList: "leaderEmailList",

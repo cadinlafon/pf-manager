@@ -2013,3 +2013,98 @@ button.tag:hover {
 .field label.file-drop.has-file {
   color: var(--text);
 }
+
+/* ───────── Sub-navigation (People → All People / Members / Groups) ───────── */
+
+.sidebar-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 6px 21px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(255, 235, 190, 0.2);
+}
+.sidebar-sublink {
+  padding: 7px 12px;
+  border-radius: 8px;
+  color: var(--nav-text);
+  text-decoration: none;
+  font-size: 13.5px;
+  transition: background-color 0.15s, color 0.15s;
+}
+.sidebar-sublink:hover {
+  background: rgba(255, 235, 190, 0.07);
+  color: var(--nav-text-active);
+}
+.sidebar-sublink.active {
+  background: var(--nav-active-bg);
+  color: var(--nav-text-active);
+  font-weight: 600;
+}
+.subnav {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  margin-bottom: 16px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+}
+.subnav a {
+  flex: 1;
+  text-align: center;
+  padding: 7px 12px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 14px;
+  white-space: nowrap;
+}
+.subnav a.active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+@media (min-width: 900px) {
+  .subnav {
+    display: none;
+  }
+}
+.avatar-stack {
+  display: flex;
+}
+.avatar-stack .avatar {
+  margin-left: -8px;
+  border: 2px solid var(--surface);
+}
+.avatar-stack .avatar:first-child {
+  margin-left: 0;
+}
+.pick-list {
+  max-height: min(46dvh, 380px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.pick-list label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.pick-list label:last-child {
+  border-bottom: 0;
+}
+.pick-list label:hover {
+  background: var(--surface-2);
+}
+.pick-list input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent-strong);
+  flex-shrink: 0;
+}

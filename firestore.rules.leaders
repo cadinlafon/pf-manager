@@ -267,6 +267,7 @@ match /leaderAnnouncements/{id} {
 
 // ── People directory ─────────────────────────────────────────────────
 match /leaderPeople/{id} { allow read, write: if isLeader(); }
+match /leaderGroups/{id} { allow read, write: if isLeader(); }
 
 // ── Inventory, finance ledger, email list ────────────────────────────
 match /leaderInventory/{id}    { allow read, write: if isLeader(); }
