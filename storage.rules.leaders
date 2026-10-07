@@ -1,0 +1,64 @@
+// Firebase Storage rules PF Management needs. NOT deployed automatically.
+//
+// Paste everything below INSIDE the existing
+//     match /b/{bucket}/o { ... }
+// block of the project's Storage rules (Firebase console → Storage → Rules),
+// with `rules_version = '2';` as the first line. If the project has no Storage
+// rules yet, wrap it like this:
+//
+//     rules_version = '2';
+//     service firebase.storage {
+//       match /b/{bucket}/o {
+//         ...paste here...
+//       }
+//     }
+//
+// These rules read Firestore (who is a leader, and each resource's
+// visibility), so the console will ask once for permission to let Storage
+// rules access Firestore — allow it.
+
+function pfmIsMainAdmin() {
+  return request.auth != null && (
+    firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+    firestore.get(/databases/(default)/documents/leaders/$(request.auth.uid)).data.role == 'main_admin'
+  );
+}
+
+function pfmIsLeader() {
+  return request.auth != null && (
+    firestore.exists(/databases/(default)/documents/leaders/$(request.auth.uid)) ||
+    firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin'
+  );
+}
+
+function pfmSaved(resourceId) {
+  return firestore.get(/databases/(default)/documents/leaderSaved/$(resourceId)).data;
+}
+
+// Files uploaded to Saved live at leaderSaved/{resourceId}/{fileName}, and
+// follow the visibility of the Firestore document leaderSaved/{resourceId}:
+// a file can be opened by exactly the people who can see that resource.
+match /leaderSaved/{resourceId}/{fileName} {
+  allow read: if pfmIsLeader() && (
+    pfmSaved(resourceId).createdBy == request.auth.uid ||
+    pfmSaved(resourceId).visibility == 'leaders' ||
+    (pfmSaved(resourceId).visibility == 'admins' && pfmIsMainAdmin())
+  );
+
+  // Upload/replace: only for a resource you created (or, as a main admin, a
+  // shared one), up to 25 MB, and never a program or a web page — those could
+  // run code when opened.
+  allow create, update: if pfmIsLeader() &&
+    (
+      pfmSaved(resourceId).createdBy == request.auth.uid ||
+      (pfmIsMainAdmin() && pfmSaved(resourceId).visibility != 'personal')
+    ) &&
+    request.resource.size <= 25 * 1024 * 1024 &&
+    !fileName.lower().matches('.*[.](exe|msi|bat|cmd|com|scr|pif|cpl|js|mjs|jse|vbs|vbe|wsf|ps1|sh|bash|command|app|dmg|pkg|deb|rpm|jar|apk|ipa|html|htm|xhtml|svg|php|py|rb|pl|dll|sys|lnk|reg|hta)') &&
+    !request.resource.contentType.matches('text/html.*|application/xhtml.*|image/svg.*|application/javascript.*|text/javascript.*|application/x-msdownload.*|application/x-sh.*');
+
+  allow delete: if pfmIsLeader() && (
+    pfmSaved(resourceId).createdBy == request.auth.uid ||
+    (pfmIsMainAdmin() && pfmSaved(resourceId).visibility != 'personal')
+  );
+}

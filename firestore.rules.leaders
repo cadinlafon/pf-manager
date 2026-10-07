@@ -1,0 +1,317 @@
+// Firestore rules PF Management needs. NOT deployed automatically.
+//
+// This Firebase project is shared with the PF Audio App. Paste everything
+// below INSIDE the existing
+//     match /databases/{database}/documents { ... }
+// block of the project's current rules (Firebase console → Firestore → Rules),
+// next to the audio app's rules. Do not replace the existing rules with this
+// file — that would break the audio app.
+//
+// Until these are published, inviting leaders and accepting invitations will
+// fail with "permission denied".
+
+function isLeader() {
+  return request.auth != null && (
+    get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+    exists(/databases/$(database)/documents/leaders/$(request.auth.uid))
+  );
+}
+
+function isMainAdmin() {
+  return request.auth != null && (
+    get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+    get(/databases/$(database)/documents/leaders/$(request.auth.uid)).data.role == 'main_admin'
+  );
+}
+
+// ── Invitations ──────────────────────────────────────────────────────
+// The document ID is a 64-character random token, so anyone holding the link
+// may read that one invitation (`get`), but only main admins can list them.
+match /invitations/{token} {
+  allow get: if true;
+  allow list, delete: if isMainAdmin();
+
+  allow create: if isMainAdmin() &&
+    request.resource.data.status == 'pending' &&
+    request.resource.data.role in ['main_admin', 'leader'] &&
+    request.resource.data.invitedBy == request.auth.uid;
+
+  // The invited person marks their own invitation accepted, once.
+  allow update: if request.auth != null &&
+    resource.data.status == 'pending' &&
+    resource.data.expiresAt > request.time &&
+    request.auth.token.email == resource.data.email &&
+    request.resource.data.status == 'accepted' &&
+    request.resource.data.acceptedBy == request.auth.uid &&
+    request.resource.data.diff(resource.data).affectedKeys()
+      .hasOnly(['status', 'acceptedAt', 'acceptedBy']);
+}
+
+// ── Leaders ──────────────────────────────────────────────────────────
+// A leader doc can only be created by the invited account itself, from a
+// pending, unexpired invitation for that account's email, with exactly the
+// role the invitation grants.
+function invitationFor(data) {
+  return get(/databases/$(database)/documents/invitations/$(data.inviteToken)).data;
+}
+
+match /leaders/{uid} {
+  allow read: if request.auth != null && (request.auth.uid == uid || isLeader());
+
+  allow create: if request.auth != null &&
+    request.auth.uid == uid &&
+    invitationFor(request.resource.data).status == 'pending' &&
+    invitationFor(request.resource.data).expiresAt > request.time &&
+    invitationFor(request.resource.data).email == request.auth.token.email &&
+    invitationFor(request.resource.data).role == request.resource.data.role &&
+    request.resource.data.email == request.auth.token.email;
+
+  allow create, update, delete: if isMainAdmin();
+}
+
+// ── Shared settings (connected Google Calendar, …) ───────────────────
+match /leaderConfig/{name} {
+  allow read: if isLeader();
+  allow write: if isMainAdmin();
+}
+
+// ── Signup forms ─────────────────────────────────────────────────────
+// Forms are public by link: anyone may load one form by its ID and submit to
+// it while it is open. Only leaders can list forms or read submissions.
+match /leaderForms/{slug} {
+  allow get: if true;
+  allow list, create, update, delete: if isLeader();
+
+  match /submissions/{id} {
+    allow create: if
+      get(/databases/$(database)/documents/leaderForms/$(slug)).data.status == 'open' &&
+      request.resource.data.keys().hasOnly(['answers', 'submittedAt']) &&
+      request.resource.data.answers is map &&
+      request.resource.data.answers.size() <= 50 &&
+      request.resource.data.submittedAt == request.time;
+    allow read, delete: if isLeader();
+  }
+}
+
+// ── Volunteer signups ────────────────────────────────────────────────
+// A published signup is public by link: the event, positions, filled counts
+// and the roster (names of who signed up, like a paper signup sheet).
+// Contact details are in `volunteers`, which only leaders can read.
+//
+// Self-signup: a visitor may add ONE volunteer doc and bump that position's
+// count by one, in a single batch, only while the signup is open and the
+// position has room. The two writes are tied together with getAfter(), so
+// neither can happen without the other.
+//
+// Self-cancel: the volunteer doc's ID is the SHA-256 of a secret that only
+// the person who signed up holds (it stays in their browser). Cancelling
+// must present that secret, so knowing a doc ID is not enough to remove
+// someone. Requires `rules_version = '2';` at the top of the rules.
+
+function volunteerDocPath(signupId, volunteerId) {
+  return /databases/$(database)/documents/volunteerSignups/$(signupId)/volunteers/$(volunteerId);
+}
+
+function rosterDocPath(signupId, volunteerId) {
+  return /databases/$(database)/documents/volunteerSignups/$(signupId)/roster/$(volunteerId);
+}
+
+function signupDocPath(signupId) {
+  return /databases/$(database)/documents/volunteerSignups/$(signupId);
+}
+
+// Signup doc, self-signup: only filledCounts (one position) + lastVolunteerId
+// may change, and a brand-new volunteer doc for that position must be
+// created in the same batch.
+function selfSignupChange(signupId) {
+  let volunteerId = request.resource.data.lastVolunteerId;
+  return resource.data.status == 'open' &&
+    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['filledCounts', 'lastVolunteerId']) &&
+    !exists(volunteerDocPath(signupId, volunteerId)) &&
+    existsAfter(volunteerDocPath(signupId, volunteerId)) &&
+    request.resource.data.filledCounts.diff(resource.data.filledCounts).affectedKeys()
+      .hasOnly([getAfter(volunteerDocPath(signupId, volunteerId)).data.positionId]);
+}
+
+// Signup doc, self-cancel: same shape, but the volunteer doc must be deleted
+// in the same batch and the caller must prove they hold its secret.
+function selfCancelChange(signupId) {
+  let volunteerId = request.resource.data.lastVolunteerId;
+  return resource.data.allowCancellation == true &&
+    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['filledCounts', 'lastVolunteerId', 'cancelProof']) &&
+    request.resource.data.cancelProof is string &&
+    hashing.sha256(request.resource.data.cancelProof).toHexString().lower() == volunteerId &&
+    exists(volunteerDocPath(signupId, volunteerId)) &&
+    !existsAfter(volunteerDocPath(signupId, volunteerId)) &&
+    request.resource.data.filledCounts.diff(resource.data.filledCounts).affectedKeys()
+      .hasOnly([get(volunteerDocPath(signupId, volunteerId)).data.positionId]);
+}
+
+// Volunteer doc, self-signup: well-formed, for a real position with room,
+// and the count goes up by exactly one in the same batch.
+function validSelfSignup(signupId, volunteerId) {
+  let before = get(signupDocPath(signupId)).data;
+  let after = getAfter(signupDocPath(signupId)).data;
+  let position = request.resource.data.positionId;
+  return before.status == 'open' &&
+    after.lastVolunteerId == volunteerId &&
+    existsAfter(rosterDocPath(signupId, volunteerId)) &&
+    request.resource.data.keys().hasOnly(['positionId', 'name', 'email', 'phone', 'source', 'createdAt']) &&
+    request.resource.data.source == 'self' &&
+    request.resource.data.createdAt == request.time &&
+    request.resource.data.name is string &&
+    request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 100 &&
+    request.resource.data.email is string && request.resource.data.email.size() <= 200 &&
+    request.resource.data.phone is string && request.resource.data.phone.size() <= 40 &&
+    position in before.spotsByPosition &&
+    after.filledCounts[position] == before.filledCounts.get(position, 0) + 1 &&
+    after.filledCounts[position] <= before.spotsByPosition[position];
+}
+
+// Volunteer doc, self-cancel: only a self-signup can be self-cancelled, and
+// the count goes down by exactly one in the same batch. (The secret is
+// checked on the signup doc's update, which this forces to happen.)
+function validSelfCancel(signupId, volunteerId) {
+  let before = get(signupDocPath(signupId)).data;
+  let after = getAfter(signupDocPath(signupId)).data;
+  let position = resource.data.positionId;
+  return before.allowCancellation == true &&
+    resource.data.source == 'self' &&
+    !existsAfter(rosterDocPath(signupId, volunteerId)) &&
+    after.lastVolunteerId == volunteerId &&
+    after.cancelProof is string &&
+    hashing.sha256(after.cancelProof).toHexString().lower() == volunteerId &&
+    after.filledCounts[position] == before.filledCounts[position] - 1 &&
+    after.filledCounts[position] >= 0;
+}
+
+// Roster entry, self-signup: must be created together with its volunteer doc
+// (which is validated above) and carry exactly that name and position.
+function validRosterEntry(signupId, volunteerId) {
+  return !exists(volunteerDocPath(signupId, volunteerId)) &&
+    existsAfter(volunteerDocPath(signupId, volunteerId)) &&
+    request.resource.data.keys().hasOnly(['positionId', 'name', 'createdAt']) &&
+    request.resource.data.createdAt == request.time &&
+    request.resource.data.name == getAfter(volunteerDocPath(signupId, volunteerId)).data.name &&
+    request.resource.data.positionId == getAfter(volunteerDocPath(signupId, volunteerId)).data.positionId;
+}
+
+// Roster entry, self-cancel: goes only when its volunteer doc goes in the same
+// batch (and that delete is what checks the secret).
+function removedWithVolunteer(signupId, volunteerId) {
+  return exists(volunteerDocPath(signupId, volunteerId)) &&
+    !existsAfter(volunteerDocPath(signupId, volunteerId));
+}
+
+match /volunteerSignups/{id} {
+  allow get: if resource.data.status != 'draft' || isLeader();
+  allow list, create, delete: if isLeader();
+  allow update: if isLeader() || selfSignupChange(id) || selfCancelChange(id);
+
+  match /volunteers/{volunteerId} {
+    allow read, update: if isLeader();
+    allow create: if isLeader() || validSelfSignup(id, volunteerId);
+    allow delete: if isLeader() || validSelfCancel(id, volunteerId);
+  }
+
+  match /roster/{volunteerId} {
+    allow read: if isLeader() || get(signupDocPath(id)).data.status != 'draft';
+    allow create: if isLeader() || validRosterEntry(id, volunteerId);
+    allow update: if isLeader();
+    allow delete: if isLeader() || removedWithVolunteer(id, volunteerId);
+  }
+}
+
+// ── Announcements ────────────────────────────────────────────────────
+// Any leader can read, post and comment. A post or comment must be under the
+// poster's own account. Only a post's author or a main admin can edit or
+// delete it; other leaders may only touch its comment summary fields (the
+// count and who commented last), which change when they comment.
+match /leaderAnnouncements/{id} {
+  allow read: if isLeader();
+  allow create: if isLeader() && request.resource.data.createdBy == request.auth.uid;
+  allow update: if isLeader() && (
+    (
+      (resource.data.createdBy == request.auth.uid || isMainAdmin()) &&
+      request.resource.data.createdBy == resource.data.createdBy &&
+      request.resource.data.createdByName == resource.data.createdByName
+    ) ||
+    request.resource.data.diff(resource.data).affectedKeys()
+      .hasOnly(['commentCount', 'lastCommentAt', 'lastCommentBy', 'lastCommentByName'])
+  );
+  allow delete: if isLeader() && (resource.data.createdBy == request.auth.uid || isMainAdmin());
+
+  // A comment can be removed by whoever wrote it, by the announcement's
+  // author, or by a main admin. Comments can't be edited.
+  match /comments/{commentId} {
+    allow read: if isLeader();
+    allow create: if isLeader() &&
+      request.resource.data.createdBy == request.auth.uid &&
+      request.resource.data.body is string &&
+      request.resource.data.body.size() > 0 && request.resource.data.body.size() <= 2000;
+    allow delete: if isLeader() && (
+      resource.data.createdBy == request.auth.uid ||
+      isMainAdmin() ||
+      get(/databases/$(database)/documents/leaderAnnouncements/$(id)).data.createdBy == request.auth.uid
+    );
+  }
+}
+
+// ── People directory ─────────────────────────────────────────────────
+match /leaderPeople/{id} { allow read, write: if isLeader(); }
+
+// ── Inventory, finance ledger, email list ────────────────────────────
+match /leaderInventory/{id}    { allow read, write: if isLeader(); }
+match /leaderTransactions/{id} { allow read, write: if isLeader(); }
+match /leaderEmailList/{id}    { allow read, write: if isLeader(); }
+
+// ── Saved resources ──────────────────────────────────────────────────
+// Each resource has a visibility: "personal" (only its creator), "leaders"
+// (every leader) or "admins" (main admins). Nobody — not even a main admin —
+// can read someone else's personal resource.
+//
+// The app loads the list with one query per case (mine / leaders / admins),
+// because a query is only allowed when it can't return a hidden document.
+function canSeeSaved(data) {
+  return data.createdBy == request.auth.uid ||
+    data.visibility == 'leaders' ||
+    (data.visibility == 'admins' && isMainAdmin());
+}
+
+// Its creator can always change or delete a resource; a main admin can too,
+// for anything they are allowed to see.
+function canManageSaved(data) {
+  return data.createdBy == request.auth.uid || (isMainAdmin() && data.visibility != 'personal');
+}
+
+match /leaderSaved/{id} {
+  allow read: if isLeader() && canSeeSaved(resource.data);
+
+  allow create: if isLeader() &&
+    request.resource.data.createdBy == request.auth.uid &&
+    request.resource.data.type in ['link', 'document', 'image', 'note', 'file'] &&
+    request.resource.data.visibility in ['personal', 'leaders', 'admins'] &&
+    (request.resource.data.visibility != 'admins' || isMainAdmin()) &&
+    (request.resource.data.pinned == false || (isMainAdmin() && request.resource.data.visibility != 'personal'));
+
+  // Pinning is for main admins and never applies to personal resources;
+  // anyone who can manage a resource may un-pin it.
+  allow update: if isLeader() &&
+    canManageSaved(resource.data) &&
+    request.resource.data.createdBy == resource.data.createdBy &&
+    request.resource.data.type == resource.data.type &&
+    request.resource.data.visibility in ['personal', 'leaders', 'admins'] &&
+    (request.resource.data.visibility != 'admins' || isMainAdmin()) &&
+    (
+      request.resource.data.pinned == false ||
+      (request.resource.data.pinned == resource.data.pinned && request.resource.data.visibility != 'personal') ||
+      (isMainAdmin() && request.resource.data.visibility != 'personal')
+    );
+
+  allow delete: if isLeader() && canManageSaved(resource.data);
+}
+
+// Each leader's own favorites and recently-opened list. Private to them.
+match /leaderSavedUsers/{uid} {
+  allow read, write: if isLeader() && request.auth.uid == uid;
+}

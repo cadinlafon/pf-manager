@@ -1,0 +1,32 @@
+{
+  "name": "pf-management",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:preview": "VITE_AUTH_PREVIEW=1 vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "emulators": "node emulator/build-rules.mjs && firebase emulators:start --config emulator/firebase.json --project demo-pf-management --only auth,firestore,storage",
+    "emulators:seed": "node emulator/seed.mjs",
+    "dev:emulators": "VITE_USE_EMULATORS=1 vite --port 5292",
+    "test:rules": "node emulator/build-rules.mjs && firebase emulators:exec --config emulator/firebase.json --project demo-pf-management --only firestore,storage \"node emulator/rules.test.mjs\"",
+    "deploy": "vite build && firebase deploy --only hosting:pfmanagment"
+  },
+  "dependencies": {
+    "@emailjs/browser": "^5.0.2",
+    "firebase": "^12.9.0",
+    "lucide-react": "^1.52.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.13.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "@vitejs/plugin-react": "^5.1.1",
+    "vite": "^7.3.1",
+    "vite-plugin-pwa": "^1.2.0"
+  }
+}

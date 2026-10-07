@@ -1,0 +1,22 @@
+node_modules
+dist
+dev-dist
+*.local
+*.log
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+.DS_Store
+.vscode/*
+.idea
+
+# Generated for the local emulator
+emulator/firestore.rules
+*-debug.log
+
+# Firebase CLI deploy cache
+.firebase/
+emulator/storage.rules
