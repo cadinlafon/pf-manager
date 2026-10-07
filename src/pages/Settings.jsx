@@ -1,18 +1,21 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Building2, CalendarDays, KeyRound, LogOut, Monitor, Moon, Palette, Plug, ShieldCheck, Sun, UserMinus, UserPlus, UserRound } from "lucide-react";
+import { Building2, CalendarDays, KeyRound, LogOut, Monitor, Moon, Palette, Pencil, Plug, ShieldCheck, Sun, UserMinus, UserPlus, UserRound } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { firestoreMessage, useQuery } from "../hooks/useQuery";
 import {
   createInvitation,
+  getLeader,
   invitationState,
   inviteUrl,
   listInvitations,
   listLeaders,
   removeLeader,
   revokeInvitation,
+  saveOwnProfile,
   sendInvitationEmail,
+  updateLeader,
 } from "../firebase/invitations";
 import { LEADER_ROLES } from "../firebase/collections";
 import { EMPTY_CHURCH, getChurchInfo, saveChurchInfo } from "../firebase/churchInfo";
@@ -83,10 +86,74 @@ function ChurchInfoCard() {
   );
 }
 
+// Edit a manager's details. `self` = editing your own (name and phone only);
+// otherwise a main admin editing someone else, who may also change their role.
+function ProfileModal({ person, self, onClose, onSaved }) {
+  const { user } = useAuth();
+  const [form, setForm] = useState({ name: person.name || "", phone: person.phone || "", role: person.role || "leader" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const set = (key) => (e) => setForm((current) => ({ ...current, [key]: e.target.value }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const data = { name: form.name.trim(), phone: form.phone.trim(), role: form.role };
+    if (!data.name) return setError("Name is required.");
+    setBusy(true);
+    setError("");
+    try {
+      if (self) await saveOwnProfile(user, data);
+      else await updateLeader(person.id, data);
+      await onSaved(data);
+      onClose();
+    } catch (err) {
+      setError(firestoreMessage(err));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={self ? "Edit Your Details" : `Edit ${person.name || "Manager"}`}
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button type="submit" form="profile-form" variant="primary" loading={busy}>Save</Button>
+        </>
+      }
+    >
+      <form id="profile-form" className="form" onSubmit={handleSubmit} noValidate>
+        {error && <Notice tone="error">{error}</Notice>}
+        <TextField label="Name" id="pr-name" maxLength={100} autoComplete={self ? "name" : "off"} value={form.name} onChange={set("name")} />
+        <TextField label="Phone" id="pr-phone" type="tel" maxLength={40} autoComplete={self ? "tel" : "off"} value={form.phone} onChange={set("phone")} />
+        <Field label="Email" id="pr-email">
+          <input id="pr-email" className="input" type="email" value={person.email || ""} disabled readOnly />
+          <span className="row-sub">This is the sign-in email, so it can't be changed here.</span>
+        </Field>
+        {!self && (
+          <Field label="Role" id="pr-role">
+            <select id="pr-role" className="input" value={form.role} onChange={set("role")}>
+              {Object.entries(LEADER_ROLES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            <span className="row-sub">Main admins can invite, edit and remove managers and change church settings.</span>
+          </Field>
+        )}
+        <span className="row-sub">A new name shows on anything posted from now on; earlier posts keep the old one.</span>
+      </form>
+    </Modal>
+  );
+}
+
 function AccountCard() {
-  const { user, name, role, signOut, resetPassword, isPreview } = useAuth();
+  const { user, name, role, signOut, resetPassword, refreshAccess, isPreview } = useAuth();
   const [message, setMessage] = useState(null);
   const [sending, setSending] = useState(false);
+  const [editing, setEditing] = useState(false);
+  // Your own manager record holds the phone number (and may not exist yet).
+  const loadSelf = useCallback(() => getLeader(user.uid), [user.uid]);
+  const self = useQuery(loadSelf, { enabled: !isPreview });
+  const phone = self.data && !Array.isArray(self.data) ? self.data.phone : "";
 
   const handleChangePassword = async () => {
     if (isPreview) {
@@ -108,13 +175,27 @@ function AccountCard() {
       <dl className="kv">
         <dt>Name</dt><dd>{name}</dd>
         <dt>Email</dt><dd>{user?.email}</dd>
+        <dt>Phone</dt><dd>{phone || "—"}</dd>
         <dt>Role</dt><dd>{LEADER_ROLES[role]}</dd>
       </dl>
       {message && <div style={{ marginTop: 14 }}><Notice tone={message.tone}>{message.text}</Notice></div>}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
+        <Button icon={Pencil} onClick={() => setEditing(true)} disabled={isPreview}>Edit Details</Button>
         <Button icon={KeyRound} onClick={handleChangePassword} loading={sending}>Change Password</Button>
         <Button variant="danger" icon={LogOut} onClick={signOut}>Sign Out</Button>
       </div>
+      {editing && (
+        <ProfileModal
+          self
+          person={{ name, phone, email: user.email }}
+          onClose={() => setEditing(false)}
+          onSaved={async () => {
+            setMessage({ tone: "success", text: "Your details were saved." });
+            self.reload();
+            await refreshAccess();
+          }}
+        />
+      )}
     </Card>
   );
 }
@@ -269,6 +350,7 @@ function LeadersCard() {
   const isMainAdmin = role === "main_admin";
   const leaders = useQuery(listLeaders, { enabled: !isPreview });
   const [removing, setRemoving] = useState("");
+  const [editingLeader, setEditingLeader] = useState(null);
   const [removeError, setRemoveError] = useState("");
 
   const handleRemove = async (leader) => {
@@ -320,9 +402,12 @@ function LeadersCard() {
               <li key={leader.id} className="row" style={{ flexWrap: "wrap" }}>
                 <div className="row-main">
                   <div className="row-title">{leader.name}{leader.id === user.uid && " (you)"}</div>
-                  <div className="row-sub">{leader.email}</div>
+                  <div className="row-sub">{[leader.email, leader.phone].filter(Boolean).join(" · ")}</div>
                 </div>
                 <Badge tone={leader.role === "main_admin" ? "info" : ""}>{LEADER_ROLES[leader.role]}</Badge>
+                {isMainAdmin && leader.id !== user.uid && (
+                  <Button icon={Pencil} onClick={() => setEditingLeader(leader)}>Edit</Button>
+                )}
                 {/* You can't remove yourself: that could leave nobody able to manage access. */}
                 {isMainAdmin && leader.id !== user.uid && (
                   <Button variant="danger" icon={UserMinus} loading={removing === leader.id} onClick={() => handleRemove(leader)}>Remove</Button>
@@ -335,6 +420,16 @@ function LeadersCard() {
       {invitations.error && <Notice tone="error">Couldn't load pending invitations. {invitations.error}</Notice>}
       <PendingInvitations query={invitations} />
       {!isMainAdmin && <p className="row-sub" style={{ marginTop: 8 }}>Only a main admin can invite or remove managers.</p>}
+      {editingLeader && (
+        <ProfileModal
+          person={editingLeader}
+          onClose={() => setEditingLeader(null)}
+          onSaved={(data) => {
+            setNotice(`${data.name}'s details were saved.`);
+            leaders.reload();
+          }}
+        />
+      )}
       {inviting && <InviteLeaderModal onClose={() => setInviting(false)} onInvited={handleInvited} />}
     </Card>
   );

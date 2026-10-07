@@ -8,6 +8,7 @@ import {
   serverTimestamp,
   setDoc,
   Timestamp,
+  updateDoc,
   writeBatch,
 } from "firebase/firestore";
 import { db } from "./config";
@@ -101,6 +102,38 @@ export async function listLeaders() {
 // refuse them everything. Main admins only.
 export function removeLeader(uid) {
   return deleteDoc(docRef("leaders", uid));
+}
+
+// ── Manager profiles ─────────────────────────────────────────────────
+// A manager's details live on leaders/{uid}: name, phone, email, role.
+// `email` is the address they were invited at and sign in with; it is shown
+// but never edited here, because changing a sign-in email needs Firebase Auth.
+export async function getLeader(uid) {
+  const snap = await getDoc(docRef("leaders", uid));
+  return snap.exists() ? { id: uid, ...snap.data() } : null;
+}
+
+// Save your own name and phone. Main admins who got in through the PF Audio
+// App have no leaders/{uid} record yet, so the first save creates one.
+export async function saveOwnProfile(user, { name, phone }) {
+  const existing = await getLeader(user.uid);
+  if (existing) {
+    await updateDoc(docRef("leaders", user.uid), { name, phone, updatedAt: serverTimestamp() });
+  } else {
+    await setDoc(docRef("leaders", user.uid), {
+      name,
+      phone,
+      email: user.email,
+      role: "main_admin",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  }
+}
+
+// Main admins only: change another manager's name, phone or role.
+export function updateLeader(uid, { name, phone, role }) {
+  return updateDoc(docRef("leaders", uid), { name, phone, role, updatedAt: serverTimestamp() });
 }
 
 // Called by the newly signed-in invitee. Both writes succeed or neither does.

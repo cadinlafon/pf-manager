@@ -96,6 +96,10 @@ Uploaded files follow the visibility of their resource: the Storage rules look u
 
 The app never stores a file's download link. A Firebase download link works for anyone who has it, so one is requested only at the moment a permitted manager opens the file. "Copy Link" copies the in-app address (`/saved/{id}`), which requires sign-in and permission.
 
+### Manager details
+
+Each manager's name, phone, email and role are on `leaders/{uid}`. A manager can change their own name and phone from Settings → Account; a main admin can change another manager's name, phone and role from Settings → Managers. The email is the sign-in address and isn't editable in the app. Main admins who came in through the PF Audio App get a `leaders/{uid}` record the first time they save their details.
+
 ### Volunteer self-signup
 
 Anyone with a signup's public link can take an open spot without an account, and cancel from the same browser if the signup allows it. Names of who signed up are public on that page (`roster`); emails and phone numbers are leader-only (`volunteers`). The rules only let a visitor add one volunteer and raise that position's count by one, together, while the signup is open and the position has room; cancelling requires a secret kept in the visitor's browser.

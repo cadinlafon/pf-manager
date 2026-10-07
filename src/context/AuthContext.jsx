@@ -33,16 +33,16 @@ async function loadLeaderAccess(firebaseUser) {
     // No profile access — fall through to the leaders check.
   }
 
-  if (!role) {
-    try {
-      const snap = await getDoc(docRef("leaders", firebaseUser.uid));
-      if (snap.exists()) {
-        name = snap.data().name || name;
-        role = snap.data().role === "main_admin" ? "main_admin" : "leader";
-      }
-    } catch {
-      // Not a leader, or rules for `leaders` are not deployed yet.
+  // Always read the manager record: it grants access to invited managers, and
+  // it holds the name anyone edits in Settings (which wins over the audio app's).
+  try {
+    const snap = await getDoc(docRef("leaders", firebaseUser.uid));
+    if (snap.exists()) {
+      name = snap.data().name || name;
+      if (!role) role = snap.data().role === "main_admin" ? "main_admin" : "leader";
     }
+  } catch {
+    // Not a manager, or rules for `leaders` are not deployed yet.
   }
 
   return { name: name || firebaseUser.email?.split("@")[0] || "Manager", role };

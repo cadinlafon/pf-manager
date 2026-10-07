@@ -178,6 +178,17 @@ await t("announcement author can delete a comment on it", assertSucceeds(deleteD
 await t("author can still edit with an attachment", assertSucceeds(updateDoc(doc(lee(), "leaderAnnouncements/byLee"), { title: "T2", attachment: { type: "link", url: "https://example.com", label: "x" }, edited: true })));
 await t("other leader cannot add an attachment", assertFails(updateDoc(doc(kim(), "leaderAnnouncements/byLee"), { attachment: { type: "link", url: "https://evil.example", label: "x" } })));
 
+console.log("EDITING MANAGER DETAILS"); await seed();
+await t("a manager can change their own name and phone", assertSucceeds(updateDoc(doc(kim(), "leaders/leader3"), { name: "Kim Lee", phone: "555-0100", updatedAt: serverTimestamp() })));
+await t("a manager cannot change their own role", assertFails(updateDoc(doc(kim(), "leaders/leader3"), { name: "Kim", role: "main_admin" })));
+await t("a manager cannot change their own email", assertFails(updateDoc(doc(kim(), "leaders/leader3"), { email: "other@x.com" })));
+await t("a manager cannot blank their name", assertFails(updateDoc(doc(kim(), "leaders/leader3"), { name: "" })));
+await t("a manager cannot edit another manager", assertFails(updateDoc(doc(kim(), "leaders/leader2"), { name: "Hacked" })));
+await t("a listener cannot edit a manager", assertFails(updateDoc(doc(listener(), "leaders/leader2"), { name: "Hacked" })));
+await t("main admin can edit another manager's details and role", assertSucceeds(updateDoc(doc(admin(), "leaders/leader2"), { name: "Lee R.", phone: "555-0101", role: "main_admin" })));
+await t("audio-app main admin can create their own manager record", assertSucceeds(setDoc(doc(admin(), "leaders/admin1"), { name: "Admin", phone: "", email: "a@x.com", role: "main_admin" })));
+await t("a listener cannot create a manager record for themselves", assertFails(setDoc(doc(listener(), "leaders/listener1"), { name: "L", phone: "", email: "l@x.com", role: "main_admin" })));
+
 console.log("REMOVING MANAGERS"); await seed();
 await t("a manager cannot remove another manager", assertFails(deleteDoc(doc(kim(), "leaders/leader2"))));
 await t("a manager cannot remove themselves from the list", assertFails(deleteDoc(doc(kim(), "leaders/leader3"))));
